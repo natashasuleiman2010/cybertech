@@ -1,69 +1,143 @@
-import { useSSO } from '@clerk/expo';
-import * as AuthSession from 'expo-auth-session';
-import * as WebBrowser from 'expo-web-browser';
-import { useCallback, useEffect, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSignUp } from '@clerk/expo';
+import { useState } from 'react';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+} from 'react-native';
 
 import { colors, fontSizes, radius, spacing } from '@/theme';
 
-WebBrowser.maybeCompleteAuthSession();
-
-// Preloads the browser on Android so the OAuth redirect returns reliably.
-function useWarmUpBrowser() {
-  useEffect(() => {
-    if (Platform.OS !== 'android') return;
-    void WebBrowser.warmUpAsync();
-    return () => {
-      void WebBrowser.coolDownAsync();
-    };
-  }, []);
-}
-
 export default function SignInScreen() {
-  useWarmUpBrowser();
-  const { startSSOFlow } = useSSO();
-  const [isSigningIn, setIsSigningIn] = useState(false);
+  const { signUp, errors, fetchStatus } = useSignUp();
+  const [step, setStep] = useState<'form' | 'verify'>('form');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [code, setCode] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
 
-  const handleGoogleSignIn = useCallback(async () => {
-    setIsSigningIn(true);
-    try {
-      const redirectUrl = AuthSession.makeRedirectUri({ scheme: 'cybertech', path: '/home' });
-      if (__DEV__) {
-        // Must be added to the Clerk Dashboard under Redirect URLs, or the
-        // session will never be created after Google redirects back.
-        console.log('Clerk OAuth redirect URL:', redirectUrl);
-      }
-      const { createdSessionId, setActive } = await startSSOFlow({
-        strategy: 'oauth_google',
-        redirectUrl,
-      });
+  const isSubmitting = fetchStatus === 'fetching';
 
-      if (createdSessionId && setActive) {
-        await setActive({ session: createdSessionId });
-      }
-    } catch {
-      // The user may have cancelled, or the network may be unavailable.
-    } finally {
-      setIsSigningIn(false);
+  const handleSignUp = async () => {
+    setFormError(null);
+    const { error } = await signUp.password({ emailAddress: email, password });
+    if (error) {
+      setFormError(error.longMessage ?? error.message);
+      return;
     }
-  }, [startSSOFlow]);
+
+    const { error: codeError } = await signUp.verifications.sendEmailCode();
+    if (codeError) {
+      setFormError(codeError.longMessage ?? codeError.message);
+      return;
+    }
+
+    setStep('verify');
+  };
+
+  const handleVerify = async () => {
+    setFormError(null);
+    const { error } = await signUp.verifications.verifyEmailCode({ code });
+    if (error) {
+      setFormError(error.longMessage ?? error.message);
+      return;
+    }
+
+    if (signUp.status === 'complete') {
+      await signUp.finalize();
+      // The (auth) layout redirects to /home once the session becomes active.
+    } else {
+      setFormError("That didn't work. Please check the code and try again.");
+    }
+  };
+
+  if (step === 'verify') {
+    return (
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <Text style={styles.title}>Check your email</Text>
+        <Text style={styles.subtitle}>
+          Enter the verification code we sent to {email}.
+        </Text>
+        <TextInput
+          value={code}
+          onChangeText={setCode}
+          placeholder="Verification code"
+          placeholderTextColor={colors.text}
+          style={styles.input}
+          keyboardType="number-pad"
+          accessibilityLabel="Verification code"
+        />
+        {errors.fields.code?.message && (
+          <Text style={styles.error}>{errors.fields.code.message}</Text>
+        )}
+        {formError && <Text style={styles.error}>{formError}</Text>}
+        <Pressable
+          accessibilityLabel="Verify code"
+          accessibilityRole="button"
+          disabled={isSubmitting || !code.trim()}
+          style={[styles.button, (isSubmitting || !code.trim()) && styles.buttonDisabled]}
+          onPress={handleVerify}
+        >
+          <Text style={styles.buttonText}>{isSubmitting ? 'Verifying…' : 'Verify'}</Text>
+        </Pressable>
+      </KeyboardAvoidingView>
+    );
+  }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Sign in</Text>
-      <Text style={styles.subtitle}>Sign in with Google to get started.</Text>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <Text style={styles.title}>Sign up</Text>
+      <Text style={styles.subtitle}>Create an account to get started.</Text>
+      <TextInput
+        value={email}
+        onChangeText={setEmail}
+        placeholder="Email"
+        placeholderTextColor={colors.text}
+        style={styles.input}
+        autoCapitalize="none"
+        autoComplete="email"
+        keyboardType="email-address"
+        accessibilityLabel="Email address"
+      />
+      {errors.fields.emailAddress?.message && (
+        <Text style={styles.error}>{errors.fields.emailAddress.message}</Text>
+      )}
+      <TextInput
+        value={password}
+        onChangeText={setPassword}
+        placeholder="Password"
+        placeholderTextColor={colors.text}
+        style={styles.input}
+        secureTextEntry
+        autoComplete="password-new"
+        accessibilityLabel="Password"
+      />
+      {errors.fields.password?.message && (
+        <Text style={styles.error}>{errors.fields.password.message}</Text>
+      )}
+      {formError && <Text style={styles.error}>{formError}</Text>}
       <Pressable
-        accessibilityLabel="Sign in with Google"
+        accessibilityLabel="Sign up"
         accessibilityRole="button"
-        disabled={isSigningIn}
-        style={[styles.button, isSigningIn && styles.buttonDisabled]}
-        onPress={handleGoogleSignIn}
+        disabled={isSubmitting || !email.trim() || !password}
+        style={[
+          styles.button,
+          (isSubmitting || !email.trim() || !password) && styles.buttonDisabled,
+        ]}
+        onPress={handleSignUp}
       >
-        <Text style={styles.buttonText}>
-          {isSigningIn ? 'Signing in…' : 'Continue with Google'}
-        </Text>
+        <Text style={styles.buttonText}>{isSubmitting ? 'Signing up…' : 'Sign up'}</Text>
       </Pressable>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -85,10 +159,27 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.md,
     color: colors.text,
     textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
+  input: {
+    width: '100%',
+    minHeight: 44,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surface,
+    color: colors.text,
+    fontSize: fontSizes.md,
+  },
+  error: {
+    width: '100%',
+    fontSize: fontSizes.sm,
+    color: colors.accent,
   },
   button: {
     minHeight: 44,
     minWidth: 44,
+    width: '100%',
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
     borderRadius: radius.full,
