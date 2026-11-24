@@ -1,5 +1,6 @@
 import { StyleSheet, Text } from 'react-native';
 import Animated, { FadeInDown, useReducedMotion } from 'react-native-reanimated';
+import Markdown from 'react-native-markdown-display';
 
 import { colors, fontSizes, radius, spacing } from '@/theme';
 
@@ -15,9 +16,11 @@ export function ChatBubble({ message }: { message: ChatMessage }) {
       style={[styles.bubble, isUser ? styles.userBubble : styles.assistantBubble]}
       accessibilityLabel={`${isUser ? 'You' : 'Assistant'} said: ${message.text}`}
     >
-      <Text style={[styles.text, isUser ? styles.userText : styles.assistantText]}>
-        {message.text}
-      </Text>
+      {isUser ? (
+        <Text style={[styles.text, styles.userText]}>{message.text}</Text>
+      ) : (
+        <Markdown style={markdownStyles}>{message.text}</Markdown>
+      )}
     </Animated.View>
   );
 }
@@ -43,7 +46,47 @@ const styles = StyleSheet.create({
   userText: {
     color: colors.background,
   },
-  assistantText: {
+});
+
+// Styles for the assistant's markdown replies. react-native-markdown-display
+// keys style overrides by node type (body, strong, bullet_list, etc.).
+const markdownStyles = StyleSheet.create({
+  body: {
     color: colors.text,
+    fontSize: fontSizes.md,
+  },
+  paragraph: {
+    marginTop: 0,
+    marginBottom: 0,
+  },
+  strong: {
+    fontWeight: '700',
+  },
+  link: {
+    color: colors.accent,
+  },
+  bullet_list: {
+    marginBottom: 0,
+  },
+  ordered_list: {
+    marginBottom: 0,
+  },
+  code_inline: {
+    backgroundColor: colors.background,
+    color: colors.text,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.xs,
+  },
+  code_block: {
+    backgroundColor: colors.background,
+    color: colors.text,
+    borderRadius: radius.sm,
+    padding: spacing.sm,
+  },
+  fence: {
+    backgroundColor: colors.background,
+    color: colors.text,
+    borderRadius: radius.sm,
+    padding: spacing.sm,
   },
 });
